@@ -1,0 +1,363 @@
+<html>
+ <script type="text/javascript" src="rl.js"></script>
+ <script type="text/javascript" src="jquery-2.1.0.js"></script>
+<head>
+<style>
+
+
+body {
+    background: black;
+    padding: 5px;
+}
+</style>
+</head>
+<canvas id="GameBoardCanvas" width="600px" height="800px">
+</canvas>
+<script>
+var gv_epoch = 0;      
+    
+/*var canvas2 = $('#MenuCanvas');
+var context2 = canvas2.getContext('2d');
+context2.font = '12pt Arial';
+context2.fillStyle = 'DeepSkyBlue';
+context2.fillText("Epoch : " , 10, 10);*/
+    
+    
+var canvas = $('#GameBoardCanvas');
+//The game board 1 = walls, 0 = free space, and -1 = the goal
+var board = [
+    [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [ 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+    [ 1, 0, 1, 0, 0, 0, 0, 0, 1, 0],
+    [ 0, 0, 0, 0, 1, 1, 1, 0, 1, 0],
+    [ 0, 1, 1, 0, 0, 0, 1, 0, 1, 0],
+    [ 0, 0, 1, 1, 1, 1, 1, 0, 1, 0],
+    [ 1, 0, 1, 0, 0, 0, 1, 0, 1, 0],
+    [ 1, 0, 1, 0, 1, 0, 1, 0, 0, 0],
+    [ 1, 0, 1, 0, 1, 0, 0, 1, 1, 0],
+    [-1, 0, 1, 0, 1, 1, 0, 0, 0, 0]
+];
+var player = {
+    x: 0,
+    y: 0
+};
+
+//Draw the game board
+function draw(){
+    var width = canvas.width();
+    var height = canvas.height();
+    var blockSize = width/board.length;
+    var ctx = canvas[0].getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle="white";
+    
+    ctx.font = '32pt Arial';
+    ctx.fillText("Learning Cycle : " + gv_epoch , 10, 700);
+    
+    ctx.strokeStyle = "#FF0000";
+    ctx.strokeRect(0, 0, 600, 605);
+    
+    /*ctx.beginPath();
+    ctx.moveTo(0, 600);
+    ctx.lineTo(600, 600);
+    ctx.stroke();*/
+    
+    //Loop through the board array drawing the walls and the goal
+    for(var y = 0; y < board.length; y++){
+        for(var x = 0; x < board[y].length; x++){
+            //Draw a wall
+            if(board[y][x] === 1){
+                ctx.fillRect(x*blockSize, y*blockSize, blockSize, blockSize);
+            }
+            //Draw the goal
+            else if(board[y][x] === -1){
+                ctx.beginPath();
+                ctx.lineWidth = 5;
+                ctx.strokeStyle = "gold";
+                ctx.moveTo(x*blockSize, y*blockSize);
+                ctx.lineTo((x+1)*blockSize, (y+1)*blockSize);
+                ctx.moveTo(x*blockSize, (y+1)*blockSize);
+                ctx.lineTo((x+1)*blockSize, y*blockSize);
+                ctx.stroke();
+            }
+        }
+    }
+    //Draw the player
+    ctx.beginPath();
+    var half = blockSize/2;
+    ctx.fillStyle = "green";
+    ctx.arc(player.x*blockSize+half, player.y*blockSize+half, half, 0, 2*Math.PI);
+    ctx.fill();
+}
+
+//Check to see if the new space is inside the board and not a wall
+function canMove(x, y){
+    return (y>=0) && (y<board.length) && (x >= 0) && (x < board[y].length) && (board[y][x] != 1);
+}
+
+/*$(document).keyup(function(e){
+    if((e.which == 38) && canMove(player.x, player.y-1))//Up arrow
+        player.y--;
+    else if((e.which == 40) && canMove(player.x, player.y+1)) // down arrow
+        player.y++;
+    else if((e.which == 37) && canMove(player.x-1, player.y))//left arrow
+        player.x--;
+    else if((e.which == 39) && canMove(player.x+1, player.y))//right arrow
+        player.x++;
+    draw();
+    e.preventDefault();
+});*/
+
+draw();
+    
+    
+var Gridworld = function(){
+      this.Rarr = null; // reward array
+      this.T = null; // cell types, 0 = normal, 1 = cliff
+      this.gs = null;
+      this.gh = null;
+      this.gw = null;
+      this.reset()
+    }
+    Gridworld.prototype = {
+      reset: function(){
+          this.Rarr = [
+                        [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [ 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        ];
+          this.T =  [
+                        [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [ 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+                        [ 1, 0, 1, 0, 0, 0, 0, 0, 1, 0],
+                        [ 0, 0, 0, 0, 1, 1, 1, 0, 1, 0],
+                        [ 0, 1, 1, 0, 0, 0, 1, 0, 1, 0],
+                        [ 0, 0, 1, 1, 1, 1, 1, 0, 1, 0],
+                        [ 1, 0, 1, 0, 0, 0, 1, 0, 1, 0],
+                        [ 1, 0, 1, 0, 1, 0, 1, 0, 0, 0],
+                        [ 1, 0, 1, 0, 1, 0, 0, 1, 1, 0],
+                        [ 0, 0, 1, 0, 1, 1, 0, 0, 0, 0]
+                    ];
+          this.gs = 100;
+          this.gh = 10;
+          this.gw = 10;
+          player = {
+                        x: 0,
+                        y: 0
+                    };
+      },
+      getNumStates: function(){
+          return this.gs;
+      },
+      getMaxNumActions: function(){
+          return 4;
+      },
+      allowedActions: function(s){
+        var x = this.stox(s);
+        var y = this.stoy(s);
+        var as = [];
+        if(!(this.T[y][x] === 1)){
+            if(canMove(x-1, y)) { as.push(0); }
+            if(canMove(x, y-1)) { as.push(1); }
+            if(canMove(x, y+1)) { as.push(2); }
+            if(canMove(x+1, y)) { as.push(3); }
+        }
+        return as;
+      },
+      nextStateDistribution: function(s,a){
+        
+        var lx =  this.stox(s);
+        var ly =  this.stoy(s);
+          
+        if(this.T[ly][lx] === 1) {
+          // cliff! oh no!
+          // var ns = 0; // reset to state zero (start)
+        } else if(s === 9) {
+          // agent wins! teleport to start
+          return 9;
+        } else {
+          // ordinary space
+          var nx, ny;
+          var x = this.stox(s);
+          var y = this.stoy(s);
+          if(a === 0) {nx=x-1; ny=y;}
+          if(a === 1) {nx=x; ny=y-1;}
+          if(a === 2) {nx=x; ny=y+1;}
+          if(a === 3) {nx=x+1; ny=y;}
+          var ns = nx*this.gh+ny;
+          if(this.T[ny][nx] === 1) {
+            // actually never mind, this is a wall. reset the agent
+            var ns = s;
+          }
+        }
+        // gridworld is deterministic, so return only a single next state
+        return ns;  
+          
+      },
+      reward: function(s,a,ns) {
+        // reward of being in s, taking action a, and ending up in ns
+        var lx =  this.stox(s);
+        var ly =  this.stoy(s); 
+        return this.Rarr[ly][lx];
+      },
+      stox: function(s) { return Math.floor(s/this.gh); },
+      stoy: function(s) { return s % this.gh; },
+      xytos: function(x,y) { return x*this.gh + y; },
+    }     
+    
+
+// create environment
+env = new Gridworld(); 
+// create the agent, yay! Discount factor 0.9
+agent = new RL.DPAgent(env, {'gamma':0.9}); 
+
+// call this function repeatedly until convergence:
+
+    for(i=0;i<1;i++){
+           gv_epoch++;
+           agent.learn();
+    }
+
+   
+    
+//play();
+player = {
+        x: 0,
+        y: 0
+     };
+var lv_state = 0;
+var lvx,lvy,gvx=10,gvy=10,lv_ns,lv_timer;
+    
+
+playMaze();
+ResetGameP(); 
+    
+    
+//Increase Epoch by Right Arrow.
+$(document).keyup(function(e){
+    if((e.which == 39))//right arrow
+        gv_epoch++;
+        agent.learn();
+        player = {
+            x: 0,
+            y: 0
+        };
+        lv_state = 0;
+    e.preventDefault();
+});
+    
+    
+function playMaze(){
+    play();
+    lv_timer = setTimeout(playMaze,200);
+}
+ 
+function ResetGameP(){
+    if(lv_state === 9){
+        player = {
+            x: 0,
+            y: 0
+        };
+        lv_state = 0;
+     }
+    setTimeout(ResetGameP,2000);
+}     
+    
+function play(){
+if(!(lv_state === 9)){
+        var action = agent.act(lv_state);
+        lv_ns = nextState(lv_state,action);
+        
+        lvx =  Math.floor(lv_state/10); 
+        lvy =  lv_state % 10;
+          
+        if(board[lvy][lvx] === 1) {
+          // cliff! oh no!
+          // var ns = 0; // reset to state zero (start)
+        } else if(lv_state === 9) {
+          // agent wins! teleport to start
+          lv_ns = 9;
+        } else {
+          // ordinary space
+          var nx, ny;
+          var x = Math.floor(lv_state/10); 
+          var y = lv_state % 10;
+          if(action === 0) {nx=x-1; ny=y;}
+          if(action === 1) {nx=x; ny=y-1;}
+          if(action === 2) {nx=x; ny=y+1;}
+          if(action === 3) {nx=x+1; ny=y;}
+          lv_ns = nx*10+ny;
+          if(board[ny][nx] === 1) {
+            // actually never mind, this is a wall. reset the agent
+            lv_ns = s;
+          }
+        }
+        
+        lv_state = lv_ns;
+        if(action === 0){
+           player.x--;
+            draw();
+        }
+        if(action === 1){
+           player.y--;
+            draw();
+        }
+        if(action === 2){
+           player.y++;
+            draw();
+        }
+        if(action === 3){
+           player.x++;
+            draw();
+        }
+}
+}    
+
+function nextState(s,a){
+        var lvx =  Math.floor(s/10); 
+        var lvy =  s % 10;
+          
+        if(board[lvy][lvx] === 1) {
+          // cliff! oh no!
+          // var ns = 0; // reset to state zero (start)
+        } else if(s === 9) {
+          // agent wins! teleport to start
+          return 9;
+        } else {
+          // ordinary space
+          var nx, ny;
+          var x = Math.floor(s/10); 
+          var y = s % 10;
+          if(a === 0) {nx=x-1; ny=y;}
+          if(a === 1) {nx=x; ny=y-1;}
+          if(a === 2) {nx=x; ny=y+1;}
+          if(a === 3) {nx=x+1; ny=y;}
+          var ns = nx*10+ny;
+          if(board[ny][nx] === 1) {
+            // actually never mind, this is a wall. reset the agent
+            var ns = s;
+          }
+        }
+        // gridworld is deterministic, so return only a single next state
+        return ns;  
+}    
+    
+// once trained, get the agent's behavior with:
+//var action = agent.act(); // returns the index of the chosen action    
+function wait(ms){
+   var start = new Date().getTime();
+   var end = start;
+   while(end < start + ms) {
+     end = new Date().getTime();
+  }
+}     
+</script>
+</html>
